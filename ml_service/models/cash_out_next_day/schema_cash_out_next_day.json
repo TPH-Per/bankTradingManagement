@@ -1,0 +1,57 @@
+{
+  "target_column": "cash_out_next_day",
+  "feature_columns": [
+    "cash_in_d0",
+    "cash_out_d0",
+    "cash_net_d0",
+    "lag1_out",
+    "lag7_out",
+    "roll_mean_7_out",
+    "dow",
+    "is_weekend",
+    "is_month_end",
+    "is_payday",
+    "channel"
+  ],
+  "required_features": [
+    "cash_in_d0",
+    "cash_out_d0",
+    "cash_net_d0",
+    "lag1_out",
+    "lag7_out",
+    "roll_mean_7_out",
+    "dow",
+    "is_weekend",
+    "is_month_end",
+    "is_payday",
+    "channel"
+  ],
+  "all_feature_names": [
+    "cash_in_d0",
+    "cash_out_d0",
+    "cash_net_d0",
+    "lag1_out",
+    "lag7_out",
+    "roll_mean_7_out",
+    "dow",
+    "is_weekend",
+    "is_month_end",
+    "is_payday",
+    "channel"
+  ],
+  "categorical_features": [
+    "channel"
+  ],
+  "numeric_features": [
+    "cash_in_d0",
+    "cash_out_d0",
+    "cash_net_d0",
+    "lag1_out",
+    "lag7_out",
+    "roll_mean_7_out",
+    "dow",
+    "is_weekend",
+    "is_month_end",
+    "is_payday"
+  ]
+}

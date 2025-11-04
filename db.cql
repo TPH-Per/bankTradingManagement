@@ -66,17 +66,8 @@ CREATE TABLE IF NOT EXISTS kpi_daily_by_account (
   PRIMARY KEY ((account_id, event_date), metric)
 );
 
-CREATE TABLE IF NOT EXISTS api_calls (
-  day        date,        -- ngày UTC từ ts
-  ts         timestamp,   -- thời điểm gọi
-  endpoint   text,        -- /rt/transactions, /kpi/daily/..., /ml/m5p/...
-  method     text,        -- GET/POST/...
-  status     int,         -- 200/400/500...
-  account_id text,        -- nếu có
-  client_ip  text,
-  extra_json text,        -- payload rút gọn / lỗi / tham số
-  PRIMARY KEY ((day), ts, endpoint)
-) WITH CLUSTERING ORDER BY (ts DESC);
+-- ❌ REMOVED: api_calls belongs to pldt_audit keyspace, not pldt_rt
+-- See pldt_audit keyspace section below for the correct table definition
 
 -- 1) Thử ghi vào dedup:
 INSERT INTO pldt_rt.client_tx_dedup (account_id, client_tx_id, tx_id, created_at)
@@ -108,6 +99,20 @@ SELECT * FROM kpi_daily WHERE event_date='2025-10-12';
 
 -- Audit
 USE pldt_audit;
+
+CREATE TABLE IF NOT EXISTS api_calls (
+  day        date,
+  ts         timestamp,
+  endpoint   text,
+  method     text,
+  status     int,
+  account_id text,
+  client_ip  text,
+  extra_json text,
+  PRIMARY KEY ((day), ts, endpoint)
+) WITH CLUSTERING ORDER BY (ts DESC);
+
+-- Example: Insert and query
 INSERT INTO api_calls (day, ts, endpoint, method, status, account_id, client_ip, extra_json)
 VALUES ('2025-10-12', toTimestamp(now()), '/healthz', 'GET', 200, null, '127.0.0.1', null);
 
@@ -132,19 +137,6 @@ CREATE TABLE IF NOT EXISTS tx_by_account_day (
   extra_json  text,
   PRIMARY KEY ((account_id, event_date), event_ts, tx_id)
 ) WITH CLUSTERING ORDER BY (event_ts DESC, tx_id ASC);
-
-CREATE TABLE IF NOT EXISTS api_calls (
-  day        date,        -- ngày UTC từ ts
-  ts         timestamp,   -- thời điểm gọi
-  endpoint   text,        -- /rt/transactions, /kpi/daily/..., /ml/m5p/...
-  method     text,        -- GET/POST/...
-  status     int,         -- 200/400/500...
-  account_id text,        -- nếu có
-  client_ip  text,
-  extra_json text,        -- payload rút gọn / lỗi / tham số
-  PRIMARY KEY ((day), ts, endpoint)
-) WITH CLUSTERING ORDER BY (ts DESC);
-
 
 USE pldt_audit;
 -- nên chỉ rõ keyspace để tránh nhầm, ví dụ pldt_rt

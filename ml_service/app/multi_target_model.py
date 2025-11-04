@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
-from ml_m5p import M5PModelAPI
+from .ml_m5p import M5PModelAPI
 
 
 class MultiTargetCashModel:

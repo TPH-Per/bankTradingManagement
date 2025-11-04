@@ -1,5 +1,5 @@
 {
-  "target_column": "amount_next_day",
+  "target_column": "cash_in_next_day",
   "feature_columns": [
     "cash_in_d0",
     "cash_out_d0",

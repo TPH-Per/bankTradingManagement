@@ -1,10 +1,12 @@
 # main.py (extended)
 import os
 import io
+import sys
 import uuid
 import json
 import logging
 import shutil
+import subprocess
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -16,11 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from threading import Lock
 
-from dual_m5p import DualCashModelAPI
-from ml_m5p import M5PModelAPI
-from multi_target_model import MultiTargetCashModel
-from cassandra_service import CassandraUnavailable, cassandra_service
-from scheduler import DailyAggregationScheduler
+from .dual_m5p import DualCashModelAPI
+from .ml_m5p import M5PModelAPI
+from .multi_target_model import MultiTargetCashModel
+from .cassandra_service import CassandraUnavailable, cassandra_service
+from .scheduler import DailyAggregationScheduler
 
 # -----------------------------------------------------------------------------
 # Config & Logging
@@ -942,6 +944,79 @@ def predict_all_targets(req: PredictReq):
         return predictions
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/spark/trigger-etl")
+async def trigger_spark_etl(background_tasks=None):
+    """
+    Manually trigger Spark ETL pipeline to process daily data.
+
+    This endpoint runs the Spark ETL job that:
+    1. Reads cash_daily.csv
+    2. Aggregates transactions by date
+    3. Engineers features (lag, rolling windows)
+    4. Merges with existing training data
+    5. Writes to cash_daily_train_realistic.csv
+    6. Clears cash_daily.csv
+    """
+    try:
+        import subprocess
+
+        spark_script = Path(__file__).parent.parent / "spark-etl.py"
+        if not spark_script.exists():
+            raise HTTPException(404, detail=f"Spark ETL script not found: {spark_script}")
+
+        # Run Spark ETL
+        result = subprocess.run(
+            [
+                sys.executable,  # Use current Python interpreter
+                str(spark_script),
+                "--mode", "local",
+                "--local-base", str(DATA_DIR)
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5 minutes
+            cwd=str(spark_script.parent)
+        )
+
+        if result.returncode == 0:
+            return {
+                "status": "success",
+                "message": "Spark ETL completed successfully",
+                "output": result.stdout[-1000:] if len(result.stdout) > 1000 else result.stdout,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            raise HTTPException(500, detail={
+                "message": "Spark ETL failed",
+                "error": result.stderr[-1000:] if len(result.stderr) > 1000 else result.stderr
+            })
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(408, detail="Spark ETL timeout (5 minutes)")
+    except Exception as e:
+        logger.exception("Spark ETL trigger failed")
+        raise HTTPException(500, detail=f"Failed to trigger Spark ETL: {str(e)}")
+
+
+@app.get("/spark/status")
+def spark_status():
+    """
+    Check Spark ETL status and configuration.
+    """
+    spark_script = Path(__file__).parent.parent / "spark-etl.py"
+
+    return {
+        "spark_installed": True,  # PySpark is installed
+        "spark_script_exists": spark_script.exists(),
+        "spark_script_path": str(spark_script),
+        "daily_csv_path": str(DAILY_CSV_PATH),
+        "daily_csv_exists": DAILY_CSV_PATH.exists(),
+        "training_csv_path": str(TRAINING_DATASET_PATH),
+        "training_csv_exists": TRAINING_DATASET_PATH.exists(),
+        "scheduler_running": scheduler is not None and scheduler.running if scheduler else False,
+    }
+
 
 @app.post("/ml/predict/cash-in")
 def predict_cash_in_all(req: PredictReq):

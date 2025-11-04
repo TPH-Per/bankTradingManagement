@@ -1,7 +1,7 @@
 # This file is created to support the uvicorn main:app command
 # It imports the app from app.py to maintain compatibility
 
-from app import app
+from .app import app
 from fastapi.responses import Response, RedirectResponse
 
 # Add a simple favicon route to prevent 404 errors

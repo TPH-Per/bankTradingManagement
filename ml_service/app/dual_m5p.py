@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional, Union
 
-from ml_m5p import (
+from .ml_m5p import (
     M5PModelAPI,
     REQUIRED_FEATURES_IN,
     REQUIRED_FEATURES_OUT,

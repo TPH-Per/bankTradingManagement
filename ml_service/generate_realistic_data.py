@@ -117,7 +117,11 @@ print(f"\nStatistics:")
 print(f"   Date range: {df['date'].min()} to {df['date'].max()}")
 print(f"   Cash In:  Min={df['cash_in'].min():,.0f}, Max={df['cash_in'].max():,.0f}, Avg={df['cash_in'].mean():,.0f}")
 print(f"   Cash Out: Min={df['cash_out'].min():,.0f}, Max={df['cash_out'].max():,.0f}, Avg={df['cash_out'].mean():,.0f}")
-print(f"   Channels: {df['channel'].value_counts().to_dict()}")
+# Ensure we're working with a Series before using pandas methods
+channel_series = df['channel']
+if not isinstance(channel_series, pd.Series):
+    channel_series = pd.Series(channel_series)
+print(f"   Channels: {channel_series.value_counts().to_dict()}")
 print(f"\nSample data:")
 print(df.head(10).to_string(index=False))
 print("\nThis dataset is ready for training all 6 models!")

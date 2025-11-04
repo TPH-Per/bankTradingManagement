@@ -480,10 +480,29 @@
         const BASE_URL = 'http://localhost:8000';
         let currentTab = 'overview';
         // HARD GUARDS: block any native form submits and Enter-key submits (no reload)
-        document.addEventListener('submit', function (e) { e.preventDefault(); }, true);
-        document.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter' && e.target && e.target.form) { e.preventDefault(); }
+        document.addEventListener('submit', function (e) { 
+            e.preventDefault(); 
+            e.stopPropagation();
+            return false; 
         }, true);
+        
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' && e.target && e.target.form) { 
+              e.preventDefault(); 
+              e.stopPropagation();
+              return false;
+          }
+        }, true);
+        
+        // Additional guard to prevent any form submissions
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON' && e.target.type === 'submit') {
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }
+        }, true);
+        
         let isProcessingTransaction = false; // 🔒 chặn double-submit
 
         function switchTab(tabName) {
@@ -511,7 +530,7 @@
         function addActivity(icon, title, type='primary'){ const list=document.getElementById('activity-log'); const time=new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}); const item=document.createElement('li'); item.className='activity-item'; item.innerHTML=`<div class="activity-icon" style="background: var(--${type}-light); color: var(--${type});"><span>${icon}</span></div><div><strong>${title}</strong><div class="activity-time">${time}</div></div>`; list?.insertBefore(item, list.firstChild); while(list && list.children.length>5){ list.removeChild(list.lastChild); } }
 
         async function handleCreateTransaction(e) {
-            // Prevent default form submission and any event propagation
+            // Prevent default form submission
             if (e && e.preventDefault) e.preventDefault();
             if (e && e.stopPropagation) e.stopPropagation();
 
@@ -519,7 +538,7 @@
             const responseDiv = document.getElementById('create-tx-response');
 
             // Prevent double submission
-            if (btn.disabled) return;
+            if (btn.disabled) return false;
 
             // Disable button and show loading state
             btn.disabled = true;
@@ -597,9 +616,15 @@
         }
 
         async function handleListTransactions(e){
-            e.preventDefault();
+            // Prevent default form submission
+            if (e && e.preventDefault) e.preventDefault();
+            if (e && e.stopPropagation) e.stopPropagation();
+
             const btn=document.getElementById('list-tx-btn');
             const responseDiv=document.getElementById('list-tx-response');
+
+            // Prevent double submission
+            if (btn.disabled) return false;
             btn.disabled=true; btn.innerHTML='<span class="spinner"></span><span>Đang tìm...</span>';
             responseDiv.className='response loading'; responseDiv.style.display='block'; responseDiv.textContent='Đang lấy giao dịch...';
             try {
@@ -607,65 +632,7 @@
                 const params=new URLSearchParams({ account_id: formData.get('list_account_id'), event_date: formData.get('event_date'), limit: formData.get('limit') });
                 const res=await fetch(`${BASE_URL}/rt/transactions?${params}`);
                 const result=await res.json();
-                if (res.ok){ 
-                    // Instead of showing raw JSON, render the transactions in a table
-                    if (result.items && Array.isArray(result.items) && result.items.length > 0) {
-                        // Create a table to display the results
-                        let tableHTML = `
-                            <div class="table-responsive">
-                                <table class="table table-hover data-table mb-0">
-                                    <thead>
-                                        <tr>
-                                            <th>#</th>
-                                            <th>Tài khoản</th>
-                                            <th>Ngày</th>
-                                            <th>Thời gian</th>
-                                            <th>Số tiền</th>
-                                            <th>Tiền tệ</th>
-                                            <th>Loại</th>
-                                            <th>Trạng thái</th>
-                                            <th>Merchant</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                        `;
-                        
-                        result.items.forEach((tx, i) => {
-                            const raw = toNumber(tx.amount);
-                            const type = normalizeTransactionType(tx.transaction_type);
-                            let display = raw;
-                            if (Number.isFinite(raw) && type === 'cash_out' && raw >= 0) display = -Math.abs(raw);
-                            const cls = Number.isNaN(display) ? '' : (display >= 0 ? 'amount-positive' : 'amount-negative');
-                            
-                            tableHTML += `
-                                <tr>
-                                    <td>${i + 1}</td>
-                                    <td>${tx.account_id || '--'}</td>
-                                    <td>${tx.event_date || '--'}</td>
-                                    <td>${formatTime(tx.event_ts)}</td>
-                                    <td><span class="${cls}">${formatAmount(display, tx.currency)}</span></td>
-                                    <td>${tx.currency || '--'}</td>
-                                    <td>${renderTypeBadge(type)}</td>
-                                    <td>${tx.status || '--'}</td>
-                                    <td>${tx.merchant || '--'}</td>
-                                </tr>
-                            `;
-                        });
-                        
-                        tableHTML += `
-                                    </tbody>
-                                </table>
-                            </div>
-                        `;
-                        
-                        responseDiv.className = 'response success';
-                        responseDiv.innerHTML = tableHTML;
-                    } else {
-                        responseDiv.className = 'response success';
-                        responseDiv.innerHTML = '<div class="text-center text-secondary py-4">Không tìm thấy giao dịch nào.</div>';
-                    }
-                    addActivity('🔍','Đã truy xuất giao dịch','primary'); 
-                }
+                if (res.ok){ responseDiv.className='response success'; responseDiv.textContent=JSON.stringify(result,null,2); addActivity('🔍','Đã truy xuất giao dịch','primary'); }
                 else { throw new Error(result.detail || 'Lỗi không xác định'); }
             } catch(err){ responseDiv.className='response error'; responseDiv.textContent=`Lỗi: ${err.message}`; addActivity('❌','Truy vấn thất bại','danger'); }
             finally { btn.disabled=false; btn.innerHTML='<span>Tìm kiếm giao dịch</span>'; }
@@ -722,13 +689,14 @@
 
         async function handleTrainModel(e) {
             // Prevent default form submission
-            if (e) e.preventDefault();
-            
+            if (e && e.preventDefault) e.preventDefault();
+            if (e && e.stopPropagation) e.stopPropagation();
+
             const btn = document.getElementById('train-ml-btn');
             const resp = document.getElementById('train-ml-response');
-            
+
             // Prevent double submission
-            if (btn.disabled) return;
+            if (btn.disabled) return false;
             
             // Disable button and show loading state
             btn.disabled = true;

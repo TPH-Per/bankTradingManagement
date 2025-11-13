@@ -1,0 +1,143 @@
+-- Keyspaces (DEV)
+CREATE KEYSPACE IF NOT EXISTS pldt_rt
+  WITH REPLICATION = {'class':'SimpleStrategy','replication_factor':1};
+
+CREATE KEYSPACE IF NOT EXISTS pldt_audit
+  WITH REPLICATION = {'class':'SimpleStrategy','replication_factor':1};
+
+-- ================== pldt_rt (nghiệp vụ) ==================
+USE pldt_rt;
+
+-- 1) Tài khoản
+CREATE TABLE IF NOT EXISTS accounts_by_id (
+  account_id   text PRIMARY KEY,
+  customer_id  text,
+  currency     text,
+  status       text,          -- ACTIVE/LOCKED/CLOSED
+  opened_at    timestamp,
+  updated_at   timestamp,
+  extra_json   text
+);
+
+CREATE TABLE IF NOT EXISTS accounts_by_customer (
+  customer_id  text,
+  account_id   text,
+  opened_at    timestamp,
+  status       text,
+  PRIMARY KEY ((customer_id), account_id)
+);
+
+-- 2) Ledger giao dịch theo tài khoản + ngày
+CREATE TABLE IF NOT EXISTS tx_by_account_day (
+  account_id               text,
+  event_date               date,
+  event_ts                 timestamp,
+  tx_id                    uuid,
+  transfer_id              uuid,      -- chung cho 2 đầu A & B
+  direction                text,      -- 'DEBIT' (A) / 'CREDIT' (B)
+  counterparty_account_id  text,
+  amount                   decimal,
+  currency                 text,
+  merchant                 text,
+  status                   text,
+  extra_json               text,
+  PRIMARY KEY ((account_id, event_date), event_ts, tx_id)
+) WITH CLUSTERING ORDER BY (event_ts DESC, tx_id ASC)
+  AND compaction = {
+    'class':'TimeWindowCompactionStrategy',
+    'compaction_window_unit':'DAYS','compaction_window_size':'1'
+  };
+
+-- 3) Chuyển khoản + idempotency
+CREATE TABLE IF NOT EXISTS transfers_by_id (
+  transfer_id   uuid PRIMARY KEY,
+  from_account  text,
+  to_account    text,
+  amount        decimal,
+  currency      text,
+  created_at    timestamp,
+  status        text,         -- PENDING/SETTLED/FAILED/REVERSED
+  extra_json    text
+);
+
+CREATE TABLE IF NOT EXISTS transfer_dedup (
+  from_account       text,
+  client_transfer_id text,
+  transfer_id        uuid,
+  created_at         timestamp,
+  PRIMARY KEY ((from_account), client_transfer_id)
+);
+
+-- 4) KPI tháng
+CREATE TABLE IF NOT EXISTS kpi_monthly (
+  month_yyyymm int,
+  metric      text,
+  value       double,
+  updated_at  timestamp,
+  PRIMARY KEY ((month_yyyymm), metric)
+);
+
+CREATE TABLE IF NOT EXISTS kpi_monthly_by_account (
+  account_id   text,
+  month_yyyymm int,
+  metric       text,   -- total_amount, num_tx, avg_ticket, fail_rate, ...
+  value        double,
+  updated_at   timestamp,
+  PRIMARY KEY ((account_id, month_yyyymm), metric)
+);
+
+-- 5) Số dư
+CREATE TABLE IF NOT EXISTS account_balances (
+  account_id   text PRIMARY KEY,
+  balance      decimal,
+  updated_at   timestamp
+);
+
+-- 6) Sao kê
+CREATE TABLE IF NOT EXISTS balance_daily_snapshots (
+  account_id      text,
+  day             date,
+  balance_open    decimal,
+  balance_close   decimal,
+  total_debit     decimal,
+  total_credit    decimal,
+  num_tx          int,
+  updated_at      timestamp,
+  PRIMARY KEY ((account_id), day)
+) WITH CLUSTERING ORDER BY (day DESC);
+
+-- ================== pldt_audit (log) ==================
+USE pldt_audit;
+
+CREATE TABLE IF NOT EXISTS api_calls (
+  day        date,
+  ts         timestamp,
+  endpoint   text,
+  method     text,
+  status     int,
+  account_id text,
+  client_ip  text,
+  extra_json text,
+  PRIMARY KEY ((day), ts, endpoint)
+) WITH CLUSTERING ORDER BY (ts DESC);
+
+
+-- -- Keyspaces (Cluster)
+-- CREATE KEYSPACE IF NOT EXISTS pldt_rt
+--   WITH REPLICATION = {'class':'NetworkTopologyStrategy','datacenter1':3};
+--
+-- CREATE KEYSPACE IF NOT EXISTS pldt_audit
+--   WITH REPLICATION = {'class':'NetworkTopologyStrategy','datacenter1':3};
+--
+-- -- Bảng: giống hệt file DEV
+-- USE pldt_rt;
+-- /* ... CREATE TABLE accounts_by_id ... */
+-- /* ... CREATE TABLE accounts_by_customer ... */
+-- /* ... CREATE TABLE tx_by_account_day ... */
+-- /* ... CREATE TABLE transfers_by_id ... */
+-- /* ... CREATE TABLE transfer_dedup ... */
+-- /* ... CREATE TABLE kpi_monthly ... */
+-- /* ... CREATE TABLE kpi_monthly_by_account ... */
+--
+-- USE pldt_audit;
+-- /* ... CREATE TABLE api_calls ... */

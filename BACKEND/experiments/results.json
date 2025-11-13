@@ -1,0 +1,102 @@
+{
+  "dataset": {
+    "path": "/mnt/c/temp/aa/ml_service/data/cash_daily_train_realistic.csv",
+    "rows": 733,
+    "columns": [
+      "date",
+      "cash_in",
+      "cash_out",
+      "day_of_week",
+      "month",
+      "quarter",
+      "balance"
+    ],
+    "date_min": "2023-01-01",
+    "date_max": "2025-11-04",
+    "cash_in": {
+      "min": -5000.0,
+      "max": 18640000.0,
+      "mean": 6909410.718417463
+    },
+    "cash_out": {
+      "min": 0.0,
+      "max": 6741000.0,
+      "mean": 3350859.328240109
+    }
+  },
+  "training": {
+    "total_seconds": 5.36442351300002,
+    "per_model": {
+      "cash_in_next_day": {
+        "rmse": 1831420.773129177,
+        "r2": 0.7719300658106699,
+        "mae": 1287140.8344942627,
+        "target_column": "cash_in_next_day",
+        "model_path": "/mnt/c/temp/aa/ml_service/models/cash_in_next_day/m5p_cash_in_next_day.pkl",
+        "seconds": 1.6723424830000226
+      },
+      "cash_out_next_day": {
+        "rmse": 629260.2650498019,
+        "r2": 0.7696606475874506,
+        "mae": 478121.10327126086,
+        "target_column": "cash_out_next_day",
+        "model_path": "/mnt/c/temp/aa/ml_service/models/cash_out_next_day/m5p_cash_out_next_day.pkl",
+        "seconds": 1.0288792100000137
+      },
+      "cash_in_h7": {
+        "rmse": 11868161.369349176,
+        "r2": 0.6352092999601535,
+        "mae": 8760016.768438488,
+        "target_column": "cash_in_h7_sum",
+        "model_path": "/mnt/c/temp/aa/ml_service/models/cash_in_h7/m5p_cash_in_h7.pkl",
+        "seconds": 0.7016787040000168
+      },
+      "cash_out_h7": {
+        "rmse": 2754503.429211983,
+        "r2": 0.8576191968442496,
+        "mae": 2059562.0379260741,
+        "target_column": "cash_out_h7_sum",
+        "model_path": "/mnt/c/temp/aa/ml_service/models/cash_out_h7/m5p_cash_out_h7.pkl",
+        "seconds": 0.4574152379999532
+      },
+      "cash_in_next_month": {
+        "rmse": 19000977.358070586,
+        "r2": 0.8850347942527527,
+        "mae": 14638475.19864889,
+        "target_column": "cash_in_next_month_sum",
+        "model_path": "/mnt/c/temp/aa/ml_service/models/cash_in_next_month/m5p_cash_in_next_month.pkl",
+        "seconds": 0.8103691300000264
+      },
+      "cash_out_next_month": {
+        "rmse": 7822489.471039996,
+        "r2": 0.9107782707944299,
+        "mae": 5683936.0254653245,
+        "target_column": "cash_out_next_month_sum",
+        "model_path": "/mnt/c/temp/aa/ml_service/models/cash_out_next_month/m5p_cash_out_next_month.pkl",
+        "seconds": 0.693681588000004
+      }
+    }
+  },
+  "inference": {
+    "loops": 1000,
+    "predict_all_ms_per_call": 57.72835484199999,
+    "predict_cash_in_ms_per_call": 41.871389585999964,
+    "predict_cash_out_ms_per_call": 25.856466520000026
+  },
+  "feature_sample": {
+    "cash_in_d0": 864.1500000000001,
+    "cash_out_d0": 0.0,
+    "cash_net_d0": 864.1500000000001,
+    "lag1_in": 5364592.450000004,
+    "lag7_in": 8319000.0,
+    "roll_mean_7_in": 9462493.8,
+    "lag1_out": 3695987.6,
+    "lag7_out": 3696000.0,
+    "roll_mean_7_out": 3817569.6571428576,
+    "dow": 1,
+    "is_weekend": 0,
+    "is_month_end": 0,
+    "is_payday": 0,
+    "channel": "DEFAULT"
+  }
+}

@@ -1,0 +1,127 @@
+version: "3.9"
+
+# ====================================================================
+# FIX: Use named volumes with explicit names to prevent data loss
+# ====================================================================
+volumes:
+  bt_cass_data:
+    name: bt_cass_data  # Fixed name!
+  bt_redis_data:
+    name: bt_redis_data
+  bt_hdfs_namenode:
+    name: bt_hdfs_namenode
+  bt_hdfs_datanode:
+    name: bt_hdfs_datanode
+
+networks:
+  banktrading_network:
+    driver: bridge
+
+services:
+  # ====================================================================
+  # Cassandra - Database
+  # ====================================================================
+  cassandra:
+    image: cassandra:4.1
+    container_name: bt-cassandra
+    environment:
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+    ports:
+      - "9042:9042"
+    volumes:
+      - bt_cass_data:/var/lib/cassandra  # Use named volume
+      - ./init_scripts:/scripts
+    networks:
+      - banktrading_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE CLUSTER' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  # ====================================================================
+  # Redis - Cache
+  # ====================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: bt-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - bt_redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - banktrading_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ====================================================================
+  # HDFS NameNode - Big Data Storage (Master)
+  # ====================================================================
+  hdfs-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: bt-hdfs-namenode
+    hostname: namenode
+    environment:
+      - CLUSTER_NAME=banktrading
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - HDFS_CONF_dfs_replication=1
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___check=false
+      - HDFS_CONF_dfs_permissions_enabled=false
+    ports:
+      - "9870:9870"  # NameNode Web UI
+      - "9000:9000"  # NameNode RPC
+      - "8020:8020"  # NameNode service RPC
+    volumes:
+      - bt_hdfs_namenode:/hadoop/dfs/name
+      - ./init_scripts:/scripts
+    networks:
+      banktrading_network:
+        aliases:
+          - namenode
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9870/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ====================================================================
+  # HDFS DataNode - Big Data Storage (Worker)
+  # ====================================================================
+  hdfs-datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: bt-hdfs-datanode
+    hostname: datanode
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - HDFS_CONF_dfs_replication=1
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___check=false
+      - HDFS_CONF_dfs_permissions_enabled=false
+    ports:
+      - "9864:9864"  # DataNode Web UI
+      - "9866:9866"  # DataNode HTTP
+    volumes:
+      - bt_hdfs_datanode:/hadoop/dfs/data
+    networks:
+      banktrading_network:
+        aliases:
+          - datanode
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9864/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s

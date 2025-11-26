@@ -1,0 +1,117 @@
+version: "3.9"
+
+# ====================================================================
+# Cassandra 3-Node Cluster for Fault Tolerance Demo
+# ====================================================================
+# This creates a 3-node Cassandra cluster to demonstrate:
+# - High availability
+# - Fault tolerance (can lose 1 node and still work)
+# - Data replication
+# ====================================================================
+
+volumes:
+  cassandra1_data: {}
+  cassandra2_data: {}
+  cassandra3_data: {}
+
+networks:
+  cassandra_cluster:
+    driver: bridge
+
+services:
+  # ====================================================================
+  # Cassandra Node 1 (Seed Node)
+  # ====================================================================
+  cassandra1:
+    image: cassandra:4.1
+    container_name: bt-cassandra-node1
+    hostname: cassandra1
+    environment:
+      - CASSANDRA_CLUSTER_NAME=BankTradingCluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra1
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+    ports:
+      - "9042:9042"  # CQL port
+      - "7000:7000"  # Inter-node communication
+      - "9160:9160"  # Thrift port
+    volumes:
+      - cassandra1_data:/var/lib/cassandra
+    networks:
+      - cassandra_cluster
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ====================================================================
+  # Cassandra Node 2
+  # ====================================================================
+  cassandra2:
+    image: cassandra:4.1
+    container_name: bt-cassandra-node2
+    hostname: cassandra2
+    environment:
+      - CASSANDRA_CLUSTER_NAME=BankTradingCluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra1
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+    ports:
+      - "9043:9042"  # CQL port (different host port)
+      - "7001:7000"  # Inter-node (different host port)
+    volumes:
+      - cassandra2_data:/var/lib/cassandra
+    networks:
+      - cassandra_cluster
+    depends_on:
+      cassandra1:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  # ====================================================================
+  # Cassandra Node 3
+  # ====================================================================
+  cassandra3:
+    image: cassandra:4.1
+    container_name: bt-cassandra-node3
+    hostname: cassandra3
+    environment:
+      - CASSANDRA_CLUSTER_NAME=BankTradingCluster
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=Rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_SEEDS=cassandra1
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+    ports:
+      - "9044:9042"  # CQL port (different host port)
+      - "7002:7000"  # Inter-node (different host port)
+    volumes:
+      - cassandra3_data:/var/lib/cassandra
+    networks:
+      - cassandra_cluster
+    depends_on:
+      cassandra2:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s

@@ -1,0 +1,34 @@
+version: "3.9"
+
+# Định nghĩa Volume để dữ liệu không bị mất khi container dừng
+volumes:
+  cass_data: {}
+
+networks:
+  banktrading_network:
+    driver: bridge
+
+services:
+  cassandra:
+    image: cassandra:4.1
+    container_name: bt-cassandra
+    # Cấu hình bộ nhớ cho môi trường dev/test
+    environment:
+      - MAX_HEAP_SIZE=512M
+      - HEAP_NEWSIZE=128M
+    # Mở cổng 9042 ra ngoài để kết nối bằng cqlsh hoặc DBeaver
+    ports:
+      - "9042:9042"
+    # Map Volume và Script
+    volumes:
+      - cass_data:/var/lib/cassandra  # Lưu trữ dữ liệu bền vững
+      - ./init_scripts:/scripts       # Map thư mục script vào container
+    networks:
+      - banktrading_network
+    restart: unless-stopped
+    # Healthcheck: Đảm bảo Cassandra đã sẵn sàng nhận kết nối
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE CLUSTER' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20

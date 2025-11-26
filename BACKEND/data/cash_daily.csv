@@ -1,0 +1,5 @@
+date,cash_in,cash_out,channel,day_of_week,month,quarter,balance,client_tx_id
+2025-11-26,0.0,1000.0,DEFAULT,2,11,4,0.0,f4f12446-aba7-401c-ae29-b2d391693e77
+2025-11-26,1000.0,0.0,DEFAULT,2,11,4,0.0,db346f0b-dfba-4d82-80d7-75101ee0af9f
+2025-11-26,0.0,1000.0,DEFAULT,2,11,4,0.0,5acb01d2-7828-402b-a563-8c3f3d8d132f
+2025-11-26,1000.0,0.0,DEFAULT,2,11,4,0.0,27836f78-f0df-41d6-ae5f-ea43cbdff289

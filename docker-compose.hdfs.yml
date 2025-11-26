@@ -1,0 +1,71 @@
+# Định nghĩa Volume để dữ liệu không bị mất khi container dừng
+volumes:
+  hdfs_namenode_data: {}
+  hdfs_datanode_data: {}
+
+networks:
+  banktrading_network:
+    driver: bridge
+
+services:
+  # HDFS NameNode - Master node quản lý file system namespace
+  hdfs-namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: bt-hdfs-namenode
+    hostname: namenode
+    environment:
+      - CLUSTER_NAME=banktrading
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - HDFS_CONF_dfs_replication=1
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___check=false
+      - HDFS_CONF_dfs_permissions_enabled=false
+    ports:
+      - "9870:9870"  # NameNode Web UI
+      - "9000:9000"  # NameNode RPC
+      - "8020:8020"  # NameNode service RPC
+    volumes:
+      - hdfs_namenode_data:/hadoop/dfs/name
+      - ./init_scripts:/scripts  # Map init scripts
+    networks:
+      banktrading_network:
+        aliases:
+          - namenode
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9870/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # HDFS DataNode - Worker node lưu trữ dữ liệu
+  hdfs-datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: bt-hdfs-datanode
+    hostname: datanode
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - HDFS_CONF_dfs_replication=1
+      - HDFS_CONF_dfs_namenode_datanode_registration_ip___check=false
+      - HDFS_CONF_dfs_permissions_enabled=false
+    ports:
+      - "9864:9864"  # DataNode Web UI
+      - "9866:9866"  # DataNode HTTP
+    volumes:
+      - hdfs_datanode_data:/hadoop/dfs/data
+    networks:
+      banktrading_network:
+        aliases:
+          - datanode
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9864/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+

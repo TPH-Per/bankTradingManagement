@@ -151,14 +151,14 @@ async function renderBalanceTab(container, accountId, onBalanceUpdate = null) {
                 </div>
                 
                 <div class="border-t border-border pt-4">
-                    <h3 class="font-semibold text-secondary-dark mb-4">Cập nhật số dư</h3>
+                    <h3 class="font-semibold text-secondary-dark mb-4">Nạp/Rút tiền tài khoản ngân hàng</h3>
                     <form id="balance-update-form" class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-secondary-dark mb-1">Thao tác</label>
                             <select name="operation" class="w-full bg-background border-border rounded-lg p-2" required>
-                                <option value="add">Thêm tiền (+)</option>
-                                <option value="subtract">Trừ tiền (-)</option>
-                                <option value="set">Đặt số dư (=)</option>
+                                <option value="add">Nạp tiền vào tài khoản (+)</option>
+                                <option value="subtract">Rút tiền từ tài khoản (-)</option>
+                                <option value="set">Đặt số dư cố định (=)</option>
                             </select>
                         </div>
                         <div>
@@ -166,7 +166,7 @@ async function renderBalanceTab(container, accountId, onBalanceUpdate = null) {
                             <input type="number" name="amount" step="0.01" min="0" required class="w-full bg-background border-border rounded-lg p-2" placeholder="Nhập số tiền">
                         </div>
                         <button type="submit" class="w-full bg-primary hover:bg-primary-dark text-background font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2">
-                            ${Save} <span>Cập nhật số dư</span>
+                            ${Save} <span>Thực hiện giao dịch</span>
                         </button>
                         <div id="balance-update-response" class="text-center text-sm mt-2"></div>
                     </form>

@@ -89,11 +89,11 @@ class P2PTransactionService:
         receiver_credited = False
         
         try:
-            # STEP 1: Validate accounts exist
+            # STEP 1: Validate đầu vào
             logger.info(f"[TX {tx_id}] Step 1: Validating accounts")
             self._validate_accounts_exist(sender_id, receiver_id)
             
-            # STEP 2: Get sender's current balance
+            # STEP 2: Kiểm tra số dư
             logger.info(f"[TX {tx_id}] Step 2: Checking sender balance")
             sender_balance = self._get_account_balance(sender_id)
             
@@ -105,7 +105,7 @@ class P2PTransactionService:
             
             logger.info(f"[TX {tx_id}] Balance check passed: {sender_balance} >= {amount_decimal}")
             
-            # STEP 3: Deduct from sender (ATOMIC with LWT)
+            # STEP 3: Trừ tiền từ người gửi (ATOMIC với LWT)
             logger.info(f"[TX {tx_id}] Step 3: Deducting from sender")
             new_sender_balance = sender_balance - amount_decimal
             
@@ -123,7 +123,7 @@ class P2PTransactionService:
             sender_debited = True
             logger.info(f"[TX {tx_id}] ✅ Sender debited: {sender_balance} -> {new_sender_balance}")
             
-            # STEP 4: Credit to receiver
+            # STEP 4: Nâng tiền cho người nhận
             logger.info(f"[TX {tx_id}] Step 4: Crediting to receiver")
             receiver_balance = self._get_account_balance(receiver_id)
             new_receiver_balance = receiver_balance + amount_decimal
@@ -134,7 +134,7 @@ class P2PTransactionService:
             
             logger.info(f"[TX {tx_id}] ✅ Receiver credited: {receiver_balance} -> {new_receiver_balance}")
             
-            # STEP 5: Log successful transaction
+            # STEP 5: Ghi log giao dịch thành công
             logger.info(f"[TX {tx_id}] Step 5: Logging transaction")
             self._log_transaction(
                 tx_id=tx_id,
@@ -286,25 +286,72 @@ class P2PTransactionService:
         status: str,
         description: str = ""
     ):
-        """Log transaction to database for audit trail"""
+        """Log transaction to database for audit trail - creates TWO records (sender + receiver)"""
+        from datetime import date
+        
+        today = date.today()
+        now = datetime.now()
+        tx_uuid = uuid.UUID(tx_id)
+        
         try:
+            # Record 1: DEBIT for SENDER
             self.session.execute(
                 """
                 INSERT INTO transactions 
-                (tx_id, account_id, sender_id, receiver_id, amount, 
-                 transaction_type, status, description, created_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, toTimestamp(now()))
+                (account_id, event_date, event_ts, tx_id, transfer_id,
+                 sender_id, receiver_id, direction, counterparty_account_id,
+                 amount, currency, transaction_type, status, description, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
-                    uuid.UUID(tx_id),
-                    sender_id,  # Primary account for transaction log
+                    sender_id,           # account_id (partition key)
+                    today,               # event_date (partition key)
+                    now,                 # event_ts (clustering key)
+                    tx_uuid,             # tx_id (clustering key)
+                    tx_uuid,             # transfer_id (same as tx_id for P2P)
                     sender_id,
                     receiver_id,
+                    "DEBIT",             # Direction for sender
+                    receiver_id,         # Counterparty is receiver
                     amount,
+                    "VND",
                     "p2p_transfer",
                     status,
-                    description
+                    description or f"Chuyển tiền đến {receiver_id}",
+                    now
                 )
             )
+            logger.info(f"[TX {tx_id}] ✅ Logged DEBIT transaction for sender {sender_id}")
+            
+            # Record 2: CREDIT for RECEIVER (only if status is completed)
+            if status == "completed":
+                self.session.execute(
+                    """
+                    INSERT INTO transactions 
+                    (account_id, event_date, event_ts, tx_id, transfer_id,
+                     sender_id, receiver_id, direction, counterparty_account_id,
+                     amount, currency, transaction_type, status, description, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        receiver_id,         # account_id (partition key)
+                        today,               # event_date (partition key)  
+                        now,                 # event_ts (clustering key)
+                        tx_uuid,             # tx_id (clustering key)
+                        tx_uuid,             # transfer_id
+                        sender_id,
+                        receiver_id,
+                        "CREDIT",            # Direction for receiver
+                        sender_id,           # Counterparty is sender
+                        amount,
+                        "VND",
+                        "p2p_transfer",
+                        status,
+                        description or f"Nhận tiền từ {sender_id}",
+                        now
+                    )
+                )
+                logger.info(f"[TX {tx_id}] ✅ Logged CREDIT transaction for receiver {receiver_id}")
+                
         except Exception as e:
             logger.error(f"Error logging transaction {tx_id}: {e}")

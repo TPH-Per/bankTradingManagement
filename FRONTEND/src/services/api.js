@@ -107,7 +107,13 @@ export const getAccountBalance = (accountId) => request(`/accounts/${accountId}/
   useCache: true,
   cacheTTL: 5 * 60 * 1000, // 5 minutes
 });
-export const updateAccountBalance = (accountId, data) => request(`/accounts/${accountId}/balance/update`, { method: 'POST', body: JSON.stringify(data) });
+export const updateAccountBalance = async (accountId, data) => {
+  const result = await request(`/accounts/${accountId}/balance/update`, { method: 'POST', body: JSON.stringify(data) });
+  // Invalidate cache for this account's balance after update
+  cacheService.invalidate(`/accounts/${accountId}/balance`);
+  return result;
+};
+
 
 // Account Statement (Sao kê)
 export const getAccountStatement = (accountId, params) => request(`/accounts/${accountId}/statement?${new URLSearchParams(params)}`);

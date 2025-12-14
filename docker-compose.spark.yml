@@ -1,0 +1,26 @@
+# Docker Compose for Spark ETL
+# Runs Spark in a container with proper Hadoop support
+
+version: '3.8'
+
+services:
+  spark:
+    image: apache/spark:3.5.0
+    container_name: bt-spark
+    hostname: spark
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+    ports:
+      - "4040:4040"   # Spark Application UI
+      - "8080:8080"   # Spark Master Web UI (if running as master)
+    volumes:
+      - ./BACKEND/data:/data                    # Mount data directory
+      - ./BACKEND/spark-etl.py:/app/spark-etl.py  # Mount ETL script
+    working_dir: /app
+    command: ["sleep", "infinity"]  # Keep container running
+    networks:
+      - spark_network
+
+networks:
+  spark_network:
+    driver: bridge

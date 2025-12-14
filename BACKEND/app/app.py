@@ -80,9 +80,9 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MODEL_DIR", str(MODEL_DIR))
 os.environ.setdefault("DATA_DIR", str(DATA_DIR))
 
-TRAINING_BASE_DATASET = DATA_DIR / "cash_daily_train_realistic.csv"
+TRAINING_BASE_DATASET = DATA_DIR / "cash_daily.csv"  # Changed: train directly from daily CSV
 TRAINING_DATASET_PATH = TRAINING_BASE_DATASET
-DAILY_CSV_PATH = DATA_DIR / "cash_daily.csv"  # Temporary daily data
+DAILY_CSV_PATH = DATA_DIR / "cash_daily.csv"  # Same file - train from live data
 DEFAULT_TRAINING_COLUMNS: List[str] = [
     "date",
     "cash_in",
@@ -1676,30 +1676,22 @@ def update_customer(account_id: str, payload: Dict[str, Any]):
 def get_account_balance(request: Request, account_id: str):
     """
     Get account balance.
-    Results are cached for 5 minutes.
+    Queries Cassandra directly for accurate, real-time balance.
     """
     try:
-        # Try to use cache
-        from app.cache_service import cache_result
-        cached_get_balance = cache_result(ttl=300, key_prefix="account")(_get_account_balance_impl)
-        return cached_get_balance(account_id)
-    except Exception as e:
-        logger.exception("Failed to get account balance")
-        raise HTTPException(status_code=500, detail=str(e))
-
-def _get_account_balance_impl(account_id: str):
-    """Internal implementation for getting account balance"""
-    try:
+        # Query Cassandra directly - no caching for accuracy
         if cassandra_service.available():
             try:
                 balance = cassandra_service.get_account_balance(account_id)
                 if balance:
+                    logger.info(f"[BALANCE] Fetched from Cassandra: {account_id} = {balance.get('balance', 0):,.0f}")
                     return balance
             except Exception:
                 logger.exception("Failed to get balance from Cassandra; using memory store.")
         
         # Fallback to memory store
         balance_value = BALANCE_STORE.get(account_id, 0.0)
+        logger.info(f"[BALANCE] Fetched from memory: {account_id} = {balance_value:,.0f}")
         return {
             "account_id": account_id,
             "balance": balance_value,
@@ -1709,21 +1701,25 @@ def _get_account_balance_impl(account_id: str):
         logger.exception("Failed to get account balance")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @api_router.post("/accounts/{account_id}/balance/update")
 def update_account_balance_endpoint(
     account_id: str,
     amount: float = Body(...),
     operation: str = Body("add", description="Operation: 'add', 'subtract', or 'set'"),
+    description: str = Body("", description="Transaction description"),
 ):
     """
     Update account balance manually.
+    Also logs transaction to transactions table for audit trail and ML training.
     """
+    import uuid as uuid_module
+    from datetime import date
+    
     try:
         if cassandra_service.available():
             try:
                 # Check for negative balance before updating in Cassandra
-                # Note: This is a check-then-act race condition, but acceptable for this level of consistency.
-                # Ideally, use LWT (Lightweight Transactions) in Cassandra or atomic operations if supported.
                 current_balance_data = cassandra_service.get_account_balance(account_id)
                 current_balance = current_balance_data.get("balance", 0.0) if current_balance_data else 0.0
                 
@@ -1743,6 +1739,83 @@ def update_account_balance_endpoint(
                     amount_delta=amount,
                     operation=operation,
                 )
+                
+                # Log transaction to transactions table (for ML training)
+                if operation in ["add", "subtract"]:
+                    try:
+                        tx_id = uuid_module.uuid4()
+                        now = datetime.now(timezone.utc)
+                        today = date.today()
+                        
+                        # Determine direction and transaction type
+                        if operation == "add":
+                            direction = "CREDIT"
+                            tx_type = "deposit"  # Khách hàng nạp tiền
+                            tx_description = description or "Nạp tiền vào tài khoản"
+                        else:  # subtract
+                            direction = "DEBIT"
+                            tx_type = "withdrawal"  # Khách hàng rút tiền
+                            tx_description = description or "Rút tiền từ tài khoản"
+                        
+                        # Insert transaction record
+                        cassandra_service.session_rt.execute(
+                            """
+                            INSERT INTO transactions 
+                            (account_id, event_date, event_ts, tx_id, transfer_id,
+                             sender_id, receiver_id, direction, counterparty_account_id,
+                             amount, currency, transaction_type, status, description, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                account_id,      # account_id (partition key)
+                                today,           # event_date (partition key)
+                                now,             # event_ts (clustering key)
+                                tx_id,           # tx_id (clustering key)
+                                tx_id,           # transfer_id
+                                account_id if operation == "subtract" else None,  # sender_id
+                                account_id if operation == "add" else None,       # receiver_id
+                                direction,       # CREDIT or DEBIT
+                                None,            # counterparty_account_id (no counterparty)
+                                abs(amount),     # amount
+                                "VND",           # currency
+                                tx_type,         # transaction_type: deposit/withdrawal
+                                "completed",     # status
+                                tx_description,  # description
+                                now              # created_at
+                            )
+                        )
+                        logger.info(f"[TX {tx_id}] ✅ Logged {direction} transaction for {account_id}: {abs(amount):,.0f} VND")
+                    except Exception as tx_error:
+                        logger.warning(f"Failed to log transaction for {account_id}: {tx_error}")
+                        # Continue even if transaction logging fails
+                
+                # Invalidate Redis cache for this account's balance
+                try:
+                    from app.cache_service import invalidate_cache
+                    invalidate_cache(f"account:*{account_id}*")
+                    logger.info(f"Cache invalidated for account {account_id}")
+                except Exception as cache_error:
+                    logger.warning(f"Failed to invalidate cache for {account_id}: {cache_error}")
+                
+                # Update daily CSV for ML training data
+                if operation in ["add", "subtract"]:
+                    try:
+                        tx_data = {
+                            "client_tx_id": tx_id if 'tx_id' in dir() else str(uuid.uuid4()),
+                            "merchant": "BALANCE_UPDATE",
+                        }
+                        csv_direction = "cash_in" if operation == "add" else "cash_out"
+                        _update_daily_csv_from_transaction(
+                            tx=tx_data,
+                            direction=csv_direction,
+                            amount_vnd=abs(amount),
+                            event_date_str=today.isoformat() if 'today' in dir() else date.today().isoformat(),
+                            event_date_obj=today if 'today' in dir() else date.today()
+                        )
+                        logger.info(f"[CSV] Updated daily CSV with {csv_direction}: {abs(amount):,.0f} VND")
+                    except Exception as csv_error:
+                        logger.warning(f"Failed to update daily CSV: {csv_error}")
+                
                 return {"status": "success", **result}
             except HTTPException:
                 raise
@@ -1766,13 +1839,6 @@ def update_account_balance_endpoint(
                 status_code=400,
                 detail=f"Số dư không đủ. Số dư hiện tại: {current_balance:,.0f} VND, Số dư sau khi thực hiện: {new_balance:,.0f} VND. Không thể thực hiện giao dịch."
             )
-            
-        if operation == "set":
-            pass # already calculated
-        elif operation == "subtract":
-            pass # already calculated
-        else:  # "add"
-            pass # already calculated
         
         BALANCE_STORE[account_id] = new_balance
         logger.info(f"Updated balance for {account_id}: {current_balance} -> {new_balance} (operation: {operation})")
@@ -1783,9 +1849,12 @@ def update_account_balance_endpoint(
             "previous_balance": current_balance,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Failed to update account balance")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @api_router.get("/customers/{account_id}/stats/summary")
 def get_customer_stats(

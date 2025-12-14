@@ -46,10 +46,9 @@ CREATE TABLE IF NOT EXISTS accounts_by_customer (
 );
 
 -- Account balances - real-time balance tracking
-CREATE TABLE IF NOT EXISTS balances (
+CREATE TABLE IF NOT EXISTS account_balances (
   account_id   text PRIMARY KEY,
   balance      decimal,
-  reserved     decimal,        -- For transaction locking
   updated_at   timestamp
 );
 
@@ -114,24 +113,19 @@ CREATE TABLE IF NOT EXISTS customers_by_phone (
 -- ----------------------------------------------------------------------------
 
 -- Transaction ledger by account and day - primary transaction log
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE IF NOT EXISTS tx_by_account_day (
   account_id               text,
   event_date               date,
   event_ts                 timestamp,
   tx_id                    uuid,
   transfer_id              uuid,         -- Links P2P transfer pairs
-  sender_id                text,         -- For P2P transfers
-  receiver_id              text,         -- For P2P transfers
   direction                text,         -- 'DEBIT' / 'CREDIT'
   counterparty_account_id  text,
   amount                   decimal,
   currency                 text,
   merchant                 text,
-  transaction_type         text,         -- p2p_transfer, cash_in, cash_out, etc.
   status                   text,         -- completed, pending, failed
-  description              text,
   extra_json               text,
-  created_at               timestamp,
   PRIMARY KEY ((account_id, event_date), event_ts, tx_id)
 ) WITH CLUSTERING ORDER BY (event_ts DESC, tx_id ASC)
   AND compaction = {
@@ -221,29 +215,6 @@ CREATE TABLE IF NOT EXISTS p2p_tx_by_customer_pair_month (
   PRIMARY KEY ((party1_customer_id, party2_customer_id, month_yyyymm),event_ts, tx_id)
 ) WITH CLUSTERING ORDER BY (event_ts DESC, tx_id ASC);
 
--- ----------------------------------------------------------------------------
--- 5. KPIs - Key Performance Indicators
--- ----------------------------------------------------------------------------
-
--- Monthly KPIs - system-wide metrics
-CREATE TABLE IF NOT EXISTS kpi_monthly (
-  month_yyyymm int,
-  metric      text,           -- total_volume, num_transactions, avg_amount, etc.
-  value       double,
-  updated_at  timestamp,
-  PRIMARY KEY ((month_yyyymm), metric)
-);
-
--- Monthly KPIs per account
-CREATE TABLE IF NOT EXISTS kpi_monthly_by_account (
-  account_id   text,
-  month_yyyymm int,
-  metric       text,   -- total_amount, num_tx, avg_ticket, fail_rate, ...
-  value        double,
-  updated_at   timestamp,
-  PRIMARY KEY ((account_id, month_yyyymm), metric)
-);
-
 -- ============================================================================
 -- AUDIT KEYSPACE: bank_trading_audit (Logging & Compliance)
 -- ============================================================================
@@ -282,10 +253,10 @@ CREATE TABLE IF NOT EXISTS api_calls (
 -- SELECT * FROM bank_trading.accounts_by_customer WHERE customer_id = '123' LIMIT 10;
 
 -- Query balances
--- SELECT * FROM bank_trading.balances WHERE account_id = '0007362';
+-- SELECT * FROM bank_trading.account_balances WHERE account_id = '0007362';
 
 -- Query transactions
--- SELECT * FROM bank_trading.transactions 
+-- SELECT * FROM bank_trading.tx_by_account_day 
 -- WHERE account_id = '0007362' AND event_date = '2025-11-24' LIMIT 10;
 
 -- Query transfers
@@ -302,11 +273,6 @@ CREATE TABLE IF NOT EXISTS api_calls (
 -- WHERE from_account = '0007362' AND to_account = '0005478' 
 -- AND event_date = '2025-11-24' LIMIT 10;
 
--- Query KPIs
--- SELECT * FROM bank_trading.kpi_monthly WHERE month_yyyymm = 202511;
--- SELECT * FROM bank_trading.kpi_monthly_by_account 
--- WHERE account_id = '0007362' AND month_yyyymm = 202511;
-
 -- ============================================================================
 -- NOTES
 -- ============================================================================
@@ -316,8 +282,7 @@ CREATE TABLE IF NOT EXISTS api_calls (
 -- 4. All monetary amounts use 'decimal' type for precision
 -- 5. extra_json fields allow flexible schema evolution
 -- 6. Partition keys are chosen for optimal query patterns
--- 7. Reserved field in balances table supports transaction locking for ACID
--- 8. Multiple customer lookup tables enable fast queries by different identifiers
+-- 7. Multiple customer lookup tables enable fast queries by different identifiers
 
 -- ============================================================================
 -- END OF SCHEMA
